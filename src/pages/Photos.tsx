@@ -16,6 +16,9 @@ const TYPE_LABELS: Record<string, string> = {
   despues: "Después ✨",
 };
 
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024;
+const ALLOWED_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
 export default function Photos() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -33,13 +36,21 @@ export default function Photos() {
 
   const loadAll = async () => {
     setLoading(true);
-    const [photosRes, clientsRes] = await Promise.all([
-      supabase.from("photos").select("*, clients(name)").eq("user_id", user!.id).order("created_at", { ascending: false }),
-      supabase.from("clients").select("id, name").eq("user_id", user!.id).order("name"),
-    ]);
-    setPhotos(photosRes.data || []);
-    setClients(clientsRes.data || []);
-    setLoading(false);
+    try {
+      const [photosRes, clientsRes] = await Promise.all([
+        supabase.from("photos").select("*, clients(name)").eq("user_id", user!.id).order("created_at", { ascending: false }),
+        supabase.from("clients").select("id, name").eq("user_id", user!.id).order("name"),
+      ]);
+      if (photosRes.error) throw photosRes.error;
+      if (clientsRes.error) throw clientsRes.error;
+      setPhotos(photosRes.data || []);
+      setClients(clientsRes.data || []);
+    } catch (error) {
+      console.error("Error cargando fotos:", error);
+      toast({ title: "No se pudieron cargar las fotos", description: "Comprueba tu conexión e inténtalo de nuevo.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,8 +60,18 @@ export default function Photos() {
       return;
     }
 
+    if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
+      toast({ title: "Formato no compatible", description: "Usa JPG, PNG, WEBP o GIF.", variant: "destructive" });
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_SIZE) {
+      toast({ title: "La foto es demasiado grande", description: "El tamaño máximo es de 10 MB.", variant: "destructive" });
+      return;
+    }
+
     setUploading(true);
-    const ext = file.name.split(".").pop();
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
     const path = `${user!.id}/${uploadForm.client_id}/${Date.now()}.${ext}`;
 
     const { error: uploadError } = await supabase.storage.from("work-photos").upload(path, file);
@@ -69,6 +90,8 @@ export default function Photos() {
     });
 
     if (dbError) {
+      const { error: cleanupError } = await supabase.storage.from("work-photos").remove([path]);
+      if (cleanupError) console.error("No se pudo limpiar la foto huérfana:", cleanupError);
       toast({ title: "Error al guardar foto", description: "No se pudo guardar la foto. Inténtalo de nuevo.", variant: "destructive" });
     } else {
       toast({ title: "Foto subida ✓" });

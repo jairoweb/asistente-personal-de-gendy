@@ -216,7 +216,7 @@ export default function Events() {
     const ics = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//Asistente de Jairo//ES",
+      "PRODID:-//Asistente de Gendy//ES",
       "BEGIN:VEVENT",
       event.event_time ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
       event.event_time ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,

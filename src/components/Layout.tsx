@@ -38,7 +38,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Paintbrush className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-white font-bold text-lg leading-none">Jairo</h1>
+              <h1 className="text-white font-bold text-lg leading-none">Gendy</h1>
               <p className="text-blue-300 text-xs mt-0.5">Asistente Personal</p>
             </div>
           </div>
@@ -84,7 +84,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="w-7 h-7 rounded-lg flex items-center justify-center gradient-primary">
             <Paintbrush className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-foreground text-base">Asistente de Jairo</span>
+          <span className="font-bold text-foreground text-base">Asistente de Gendy</span>
         </div>
         <button onClick={() => setMobileOpen(!mobileOpen)} className="p-1.5 rounded-lg hover:bg-muted">
           {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

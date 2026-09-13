@@ -43,6 +43,13 @@ interface ISpeechRecognition extends EventTarget {
   onresult: ((this: ISpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
   onerror: ((this: ISpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
 }
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
 type SpeechRecognitionConstructor = new () => ISpeechRecognition;
 declare global {
   interface Window {

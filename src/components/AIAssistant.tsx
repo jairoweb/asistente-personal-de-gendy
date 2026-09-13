@@ -38,6 +38,7 @@ interface ISpeechRecognition extends EventTarget {
   interimResults: boolean;
   start(): void;
   stop(): void;
+  abort(): void;
   onstart: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onend: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onresult: ((this: ISpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
@@ -148,6 +149,7 @@ export default function AIAssistant() {
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
+  const [micStatus, setMicStatus] = useState<"idle" | "requesting" | "listening" | "error">("idle");
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -161,22 +163,53 @@ export default function AIAssistant() {
     setMicSupported(!!SpeechRecognitionAPI);
   }, []);
 
+  useEffect(() => () => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+  }, []);
+
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      recognitionRef.current.abort();
       recognitionRef.current = null;
     }
     setListening(false);
+    setMicStatus("idle");
   }, []);
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
-      toast({ title: "No compatible", description: "Tu navegador no soporta reconocimiento de voz.", variant: "destructive" });
+      setMicStatus("error");
+      toast({ title: "Micrófono no compatible", description: "Prueba con Chrome o Edge en un dispositivo compatible.", variant: "destructive" });
+      return;
+    }
+
+    if (!window.isSecureContext && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      setMicStatus("error");
+      toast({ title: "Conexión no segura", description: "El micrófono solo funciona en HTTPS o en localhost.", variant: "destructive" });
+      return;
+    }
+
+    setMicStatus("requesting");
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      const description = name === "NotAllowedError" || name === "SecurityError"
+        ? "Permite el acceso al micrófono en el navegador y vuelve a intentarlo."
+        : name === "NotFoundError"
+          ? "No se ha encontrado ningún micrófono disponible."
+          : "No se pudo acceder al micrófono. Comprueba que no lo esté usando otra aplicación.";
+      setMicStatus("error");
+      toast({ title: "Permiso de micrófono", description, variant: "destructive" });
       return;
     }
 
@@ -185,7 +218,10 @@ export default function AIAssistant() {
     recognition.continuous = false;
     recognition.interimResults = true;
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      setListening(true);
+      setMicStatus("listening");
+    };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let transcript = "";
@@ -198,6 +234,7 @@ export default function AIAssistant() {
     recognition.onend = () => {
       setListening(false);
       recognitionRef.current = null;
+      setMicStatus("idle");
       // Auto-focus textarea after speaking
       setTimeout(() => textareaRef.current?.focus(), 100);
     };
@@ -206,12 +243,25 @@ export default function AIAssistant() {
       setListening(false);
       recognitionRef.current = null;
       if (event.error !== "aborted") {
-        toast({ title: "Error de micrófono", description: "No se pudo acceder al micrófono.", variant: "destructive" });
+        setMicStatus("error");
+        const description = event.error === "no-speech"
+          ? "No he detectado voz. Habla cerca del micrófono e inténtalo de nuevo."
+          : event.error === "network"
+            ? "El reconocimiento necesita conexión a Internet en este navegador."
+            : "Comprueba los permisos del micrófono y que no lo esté usando otra aplicación.";
+        toast({ title: "Error de micrófono", description, variant: "destructive" });
       }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setMicStatus("error");
+      toast({ title: "No se pudo iniciar el micrófono", description: "Cierra cualquier dictado activo y vuelve a intentarlo.", variant: "destructive" });
+    }
   }, [toast]);
 
   const toggleMic = useCallback(() => {
@@ -466,7 +516,8 @@ export default function AIAssistant() {
                 onClick={toggleMic}
                 disabled={loading}
                 className="flex-shrink-0 h-10 w-10"
-                title={listening ? "Parar micrófono" : "Hablar"}
+                title={listening ? "Parar micrófono" : micStatus === "requesting" ? "Solicitando permiso" : "Hablar"}
+                aria-label={listening ? "Parar micrófono" : "Hablar con el asistente"}
               >
                 {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </Button>

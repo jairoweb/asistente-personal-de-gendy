@@ -5,6 +5,7 @@ La migración `20260913000000_initial_schema.sql` crea la estructura mínima que
 - `clients`: clientes, presupuestos y estado de cobro.
 - `events`: citas, obras, cobros y recordatorios.
 - `photos`: fotografías asociadas a un cliente.
+- `ai_conversations` y `ai_messages`: memoria temporal del asistente con expiración de 24 horas.
 - Bucket privado `work-photos` para las imágenes.
 - Índices, timestamps automáticos y políticas RLS por usuario autenticado.
 

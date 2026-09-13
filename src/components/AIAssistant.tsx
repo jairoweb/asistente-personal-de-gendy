@@ -4,6 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, X, Send, Loader2, Copy, Check, Sparkles, Mic, MicOff, ImagePlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import DOMPurify from "dompurify";
@@ -67,6 +68,11 @@ const QUICK_PROMPTS = [
   { label: "✅ Fin de trabajo", prompt: "Escribe un mensaje profesional para comunicarle a un cliente que hemos terminado el trabajo y puede venir a verlo." },
   { label: "💡 Consejo precio", prompt: "¿Cómo calculo bien el precio de pintar un piso completo de 100m²? ¿Qué debo incluir?" },
 ];
+
+const INITIAL_MESSAGE: Msg = {
+  role: "assistant",
+  content: "¡Hola! Soy **PintorBot**, tu asistente de IA 🎨\n\nPuedo ayudarte a **redactar emails para clientes**, escribir **presupuestos**, dar **consejos de precios** y mucho más.\n\nUsa los accesos rápidos, escríbeme o **háblame con el micrófono** 🎙️",
+};
 
 async function streamChat(messages: Msg[], onDelta: (t: string) => void, onDone: () => void) {
   const session = await supabase.auth.getSession();
@@ -140,22 +146,93 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export default function AIAssistant() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "¡Hola! Soy **Pablo**, tu asistente de IA 🎨\n\nPuedo ayudarte a **redactar emails para clientes**, escribir **presupuestos**, dar **consejos de precios** y mucho más.\n\nUsa los accesos rápidos, escríbeme o **háblame con el micrófono** 🎙️" },
-  ]);
+  const [messages, setMessages] = useState<Msg[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
   const [micStatus, setMicStatus] = useState<"idle" | "requesting" | "listening" | "error">("idle");
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [memoryReady, setMemoryReady] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTemporaryMemory = async () => {
+      if (!user) {
+        setConversationId(null);
+        setMessages([INITIAL_MESSAGE]);
+        setMemoryReady(true);
+        return;
+      }
+
+      setMemoryReady(false);
+      const now = new Date().toISOString();
+      try {
+        await supabase
+          .from("ai_conversations")
+          .delete()
+          .eq("user_id", user.id)
+          .lt("expires_at", now);
+
+        const { data: existing, error: listError } = await supabase
+          .from("ai_conversations")
+          .select("id")
+          .eq("user_id", user.id)
+          .gt("expires_at", now)
+          .order("last_message_at", { ascending: false })
+          .limit(1);
+        if (listError) throw listError;
+
+        let id = existing?.[0]?.id;
+        if (!id) {
+          const { data: created, error: createError } = await supabase
+            .from("ai_conversations")
+            .insert({ user_id: user.id, title: "Memoria temporal de PintorBot" })
+            .select("id")
+            .single();
+          if (createError) throw createError;
+          id = created.id;
+        }
+
+        const { data: saved, error: messagesError } = await supabase
+          .from("ai_messages")
+          .select("role, content, has_image")
+          .eq("conversation_id", id)
+          .eq("user_id", user.id)
+          .gt("expires_at", now)
+          .order("created_at", { ascending: true });
+        if (messagesError) throw messagesError;
+
+        if (!cancelled) {
+          setConversationId(id);
+          setMessages(saved?.length
+            ? saved.map((message) => ({ role: message.role as Msg["role"], content: message.content }))
+            : [INITIAL_MESSAGE]);
+        }
+      } catch (error) {
+        console.error("No se pudo cargar la memoria temporal:", error);
+        if (!cancelled) {
+          setConversationId(null);
+          setMessages([INITIAL_MESSAGE]);
+        }
+      } finally {
+        if (!cancelled) setMemoryReady(true);
+      }
+    };
+
+    void loadTemporaryMemory();
+    return () => { cancelled = true; };
+  }, [user]);
 
   // Check browser support for speech recognition
   useEffect(() => {
@@ -272,9 +349,21 @@ export default function AIAssistant() {
     }
   }, [listening, startListening, stopListening]);
 
+  const saveMemoryMessage = async (message: Msg) => {
+    if (!user || !conversationId) return;
+    const { error } = await supabase.from("ai_messages").insert({
+      conversation_id: conversationId,
+      user_id: user.id,
+      role: message.role,
+      content: message.content,
+      has_image: Boolean(message.image),
+    });
+    if (error) console.error("No se pudo guardar el mensaje temporal:", error);
+  };
+
   const sendMessage = async (text: string, image?: string) => {
     const attached = image ?? pendingImage;
-    if ((!text.trim() && !attached) || loading) return;
+    if ((!text.trim() && !attached) || loading || !memoryReady) return;
     if (listening) stopListening();
     const userMsg: Msg = { role: "user", content: text.trim(), image: attached || undefined };
     const newMessages = [...messages, userMsg];
@@ -282,6 +371,7 @@ export default function AIAssistant() {
     setInput("");
     setPendingImage(null);
     setLoading(true);
+    void saveMemoryMessage(userMsg);
 
     let accumulated = "";
     try {
@@ -299,6 +389,7 @@ export default function AIAssistant() {
         },
         () => setLoading(false)
       );
+      if (accumulated) void saveMemoryMessage({ role: "assistant", content: accumulated });
     } catch (err: unknown) {
       console.error("Error de IA:", err);
       setLoading(false);
@@ -383,7 +474,7 @@ export default function AIAssistant() {
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div>
-                <p className="text-primary-foreground font-semibold text-sm leading-none">Pablo IA</p>
+                <p className="text-primary-foreground font-semibold text-sm leading-none">PintorBot IA</p>
                 <p className="text-primary-foreground/60 text-xs mt-0.5">Tu asistente personal</p>
               </div>
             </div>
@@ -423,7 +514,7 @@ export default function AIAssistant() {
                 <div className="flex justify-start">
                   <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">Pablo está escribiendo...</span>
+                    <span className="text-xs text-muted-foreground">PintorBot está escribiendo...</span>
                   </div>
                 </div>
               )}

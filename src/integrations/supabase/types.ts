@@ -144,6 +144,74 @@ export type Database = {
           },
         ]
       }
+      ai_conversations: {
+        Row: {
+          id: string
+          user_id: string
+          title: string | null
+          created_at: string
+          last_message_at: string
+          expires_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title?: string | null
+          created_at?: string
+          last_message_at?: string
+          expires_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string | null
+          created_at?: string
+          last_message_at?: string
+          expires_at?: string
+        }
+        Relationships: []
+      }
+      ai_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          user_id: string
+          role: string
+          content: string
+          has_image: boolean
+          created_at: string
+          expires_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          user_id: string
+          role: string
+          content?: string
+          has_image?: boolean
+          created_at?: string
+          expires_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          user_id?: string
+          role?: string
+          content?: string
+          has_image?: boolean
+          created_at?: string
+          expires_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "ai_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

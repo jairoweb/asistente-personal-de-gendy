@@ -3,8 +3,17 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+const configuredSupabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+
+export const supabaseConfigError = !configuredSupabaseUrl || !configuredSupabaseKey
+  ? "Faltan VITE_SUPABASE_URL y/o VITE_SUPABASE_PUBLISHABLE_KEY en la configuración del despliegue."
+  : null;
+
+// Keep module evaluation safe so a missing Vercel/Lovable variable produces a
+// useful screen instead of crashing before React can render anything.
+const SUPABASE_URL = configuredSupabaseUrl || "https://configuration-missing.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = configuredSupabaseKey || "configuration-missing-key";
 
 
 function isNewSupabaseApiKey(value: string): boolean {

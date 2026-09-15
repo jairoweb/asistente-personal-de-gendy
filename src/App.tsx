@@ -12,9 +12,25 @@ import Photos from "./pages/Photos";
 import Layout from "./components/Layout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import NotFound from "./pages/NotFound";
+import { supabaseConfigError } from "./integrations/supabase/client";
 
 
 const queryClient = new QueryClient();
+
+function ConfigurationError() {
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+      <section className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-lg">
+        <h1 className="text-xl font-semibold text-slate-900">No se pudo cargar la aplicación</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          El despliegue no tiene configuradas las credenciales públicas de Supabase.
+          En Vercel o Lovable añade las variables de <code> .env.example </code> y vuelve a desplegar.
+        </p>
+        <pre className="mt-5 overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{supabaseConfigError}</pre>
+      </section>
+    </main>
+  );
+}
 
 function ProtectedApp() {
   const { user, loading } = useAuth();
@@ -49,17 +65,19 @@ function ProtectedApp() {
 
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <ProtectedApp />
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  supabaseConfigError ? <ConfigurationError /> : (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <ProtectedApp />
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
 );
 
 export default App;
